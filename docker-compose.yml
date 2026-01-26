@@ -1,0 +1,78 @@
+name: matus-docker
+
+services:
+  traefik:
+    image: traefik:v3.3
+    container_name: master-reverse-proxy
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data/traefik/logs:/logs
+    command:
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=DEBUG"
+      - "--accesslog=true"
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+    networks:
+      - shared_network
+
+  db:
+    container_name: master-db
+    image: mysql:8.0
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: false
+      MYSQL_ROOT_PASSWORD: '123'
+    volumes:
+      - ./data/db_data:/var/lib/mysql
+      - ./mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh
+      - ./mysql/mysql.cnf:/etc/my.cnf
+    networks:
+      - shared_network
+    command: [ 'mysqld', '--max-allowed-packet=500M' , '--character-set-server=utf8mb4', '--collation-server=utf8mb4_slovak_ci' ]
+
+  redis:
+    container_name: master-redis
+    image: 'redis:alpine'
+    ports:
+      - '${FORWARD_REDIS_PORT:-6379}:6379'
+    volumes:
+      - './data/redis:/data'
+    networks:
+      - shared_network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      retries: 3
+      timeout: 5s
+
+  postgres:
+    container_name: master-postgres
+    image: postgres:17-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: 'postgres'
+      POSTGRES_PASSWORD: 'postgres'
+      POSTGRES_DB: 'app'
+    volumes:
+      - ./data/postgres_data:/var/lib/postgresql/data
+    networks:
+      - shared_network
+
+networks:
+    shared_network:
+      name: "shared_network"

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+if [ ! -d /var/www/html/vendor ]; then
+    cd /var/www/html
+    composer install
+fi
+
+exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
