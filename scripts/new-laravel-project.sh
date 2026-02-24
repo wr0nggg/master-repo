@@ -10,8 +10,8 @@ if [ ! -d "${TEMPLATE_DOCKER_DIR}" ]; then
   exit 1
 fi
 
-if ! command -v composer >/dev/null 2>&1; then
-  echo "composer is required on the host" >&2
+if ! command -v git >/dev/null 2>&1; then
+  echo "git is required on the host" >&2
   exit 1
 fi
 
@@ -24,9 +24,29 @@ POSTGRES_PASSWORD="postgres"
 REDIS_HOST="master-redis"
 
 while true; do
+  printf "Project source ([1] create fresh Laravel / [2] clone existing repo) [1]: "
+  read -r SOURCE_CHOICE
+  SOURCE_CHOICE=${SOURCE_CHOICE:-1}
+  case "${SOURCE_CHOICE}" in
+    1|2) ;;
+    *)
+      echo "Invalid source choice" >&2
+      continue
+      ;;
+  esac
+
   read -rp "Project directory name (e.g. blog-app): " PROJECT_SLUG
   PROJECT_SLUG=${PROJECT_SLUG:-laravel-app}
   PROJECT_DIR="${PROJECTS_ROOT}/${PROJECT_SLUG}"
+
+  REPO_SSH_URL=""
+  if [ "${SOURCE_CHOICE}" = "2" ]; then
+    read -rp "Repository SSH URL (e.g. git@repo.wbpo.online:myzones/my-zone.git): " REPO_SSH_URL
+    if [ -z "${REPO_SSH_URL}" ]; then
+      echo "Repository SSH URL is required for clone mode" >&2
+      continue
+    fi
+  fi
 
   read -rp "Subdomain for Traefik (e.g. blog): " TRAEFIK_SUBDOMAIN
   TRAEFIK_SUBDOMAIN=${TRAEFIK_SUBDOMAIN:-${PROJECT_SLUG}}
@@ -61,7 +81,9 @@ while true; do
   cat <<SUMMARY
 
 Configuration:
+  Source mode: $( [ "${SOURCE_CHOICE}" = "1" ] && echo "create fresh laravel" || echo "clone repository" )
   Project slug: ${PROJECT_SLUG}
+  Repository URL: ${REPO_SSH_URL:-n/a}
   Subdomain: ${TRAEFIK_SUBDOMAIN}
   App host: ${APP_HOST}
   Project directory: ${PROJECT_DIR}
@@ -102,7 +124,15 @@ if ! docker network inspect "${MASTER_NETWORK}" >/dev/null 2>&1; then
   docker network create "${MASTER_NETWORK}" >/dev/null
 fi
 
-composer create-project laravel/laravel "${PROJECT_DIR}"
+if [ "${SOURCE_CHOICE}" = "1" ]; then
+  if ! command -v composer >/dev/null 2>&1; then
+    echo "composer is required on the host for create mode" >&2
+    exit 1
+  fi
+  composer create-project laravel/laravel "${PROJECT_DIR}"
+else
+  git clone "${REPO_SSH_URL}" "${PROJECT_DIR}"
+fi
 
 pushd "${PROJECT_DIR}" >/dev/null
 
@@ -151,8 +181,6 @@ cp "${TEMPLATE_DOCKER_DIR}/php/php.ini" docker/php/php.ini
 cp "${TEMPLATE_DOCKER_DIR}/php/start-container" docker/php/start-container
 cp "${TEMPLATE_DOCKER_DIR}/php/supervisord.conf" docker/php/supervisord.conf
 chmod +x docker/php/start-container
-cp "${TEMPLATE_DOCKER_DIR}/php/start-container" docker/php/start-container
-cp "${TEMPLATE_DOCKER_DIR}/php/supervisord.conf" docker/php/supervisord.conf
 
 cp .env.example .env
 
